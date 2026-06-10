@@ -1,0 +1,187 @@
+{
+  "name": "Alcovia Reward Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "alcovia-reward",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "alcovia-reward"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Retrieve the deduplicated eventId set from static data\n// Static data persists across workflow executions in n8n\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.processedEventIds) {\n  staticData.processedEventIds = {};\n}\n\nconst eventId = $input.first().json.body?.eventId || $input.first().json.eventId;\n\nif (!eventId) {\n  return [{ json: { alreadySent: true, reason: 'no_event_id' } }];\n}\n\nconst alreadySent = staticData.processedEventIds[eventId] === true;\n\nreturn [{ json: { alreadySent, eventId } }];"
+      },
+      "id": "check-event-id",
+      "name": "Check EventId",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json[\"alreadySent\"]}}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-already-sent",
+      "name": "Already Sent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3001/notifications",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "eventId",
+              "value": "={{$node[\"Webhook\"].json[\"body\"][\"eventId\"] || $node[\"Webhook\"].json[\"eventId\"]}}"
+            },
+            {
+              "name": "studentId",
+              "value": "={{$node[\"Webhook\"].json[\"body\"][\"studentId\"] || $node[\"Webhook\"].json[\"studentId\"]}}"
+            },
+            {
+              "name": "coins",
+              "value": "={{$node[\"Webhook\"].json[\"body\"][\"coins\"] || $node[\"Webhook\"].json[\"coins\"]}}"
+            },
+            {
+              "name": "streak",
+              "value": "={{$node[\"Webhook\"].json[\"body\"][\"streak\"] || $node[\"Webhook\"].json[\"streak\"]}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$node[\"Webhook\"].json[\"body\"][\"message\"] || $node[\"Webhook\"].json[\"message\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-notification",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [900, 180]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Mark eventId as processed in static data\nconst staticData = $getWorkflowStaticData('global');\n\nif (!staticData.processedEventIds) {\n  staticData.processedEventIds = {};\n}\n\nconst eventId = $node[\"Check EventId\"].json[\"eventId\"];\nif (eventId) {\n  staticData.processedEventIds[eventId] = true;\n  console.log(`[n8n] Marked event ${eventId} as sent`);\n}\n\nreturn $input.all();"
+      },
+      "id": "store-event-id",
+      "name": "Store EventId",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1120, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"eventId\":\"{{$node[\"Check EventId\"].json[\"eventId\"]}}\",\"sent\":true}"
+      },
+      "id": "respond-sent",
+      "name": "Respond (sent)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"ok\":true,\"eventId\":\"{{$node[\"Check EventId\"].json[\"eventId\"]}}\",\"sent\":false,\"reason\":\"duplicate\"}"
+      },
+      "id": "respond-duplicate",
+      "name": "Respond (duplicate)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 420]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check EventId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check EventId": {
+      "main": [
+        [
+          {
+            "node": "Already Sent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Already Sent?": {
+      "main": [
+        [
+          {
+            "node": "Respond (duplicate)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Notification": {
+      "main": [
+        [
+          {
+            "node": "Store EventId",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store EventId": {
+      "main": [
+        [
+          {
+            "node": "Respond (sent)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
